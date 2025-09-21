@@ -1,7 +1,7 @@
 {
-  "name": "tsdav",
+  "name": "tauri-tsdav",
   "version": "2.1.5",
-  "description": "WebDAV, CALDAV, and CARDDAV client for Nodejs and the Browser",
+  "description": "WebDAV, CALDAV, and CARDDAV client for Tauri",
   "keywords": [
     "dav",
     "caldav",
@@ -46,6 +46,7 @@
     "watch": "tsc --watch --outDir ./dist"
   },
   "dependencies": {
+    "@tauri-apps/plugin-http": "^2.5.2",
     "base-64": "1.0.0",
     "cross-fetch": "4.1.0",
     "debug": "4.4.1",

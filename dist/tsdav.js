@@ -1,3 +1,346 @@
+/******************************************************************************
+Copyright (c) Microsoft Corporation.
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+***************************************************************************** */
+/* global Reflect, Promise, SuppressedError, Symbol, Iterator */
+
+
+function __classPrivateFieldGet(receiver, state, kind, f) {
+    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
+    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
+}
+
+function __classPrivateFieldSet(receiver, state, value, kind, f) {
+    if (typeof state === "function" ? receiver !== state || true : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
+    return (state.set(receiver, value)), value;
+}
+
+typeof SuppressedError === "function" ? SuppressedError : function (error, suppressed, message) {
+    var e = new Error(message);
+    return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
+};
+
+// Copyright 2019-2024 Tauri Programme within The Commons Conservancy
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
+var _Channel_onmessage, _Channel_nextMessageIndex, _Channel_pendingMessages, _Channel_messageEndIndex;
+/**
+ * Invoke your custom commands.
+ *
+ * This package is also accessible with `window.__TAURI__.core` when [`app.withGlobalTauri`](https://v2.tauri.app/reference/config/#withglobaltauri) in `tauri.conf.json` is set to `true`.
+ * @module
+ */
+/**
+ * A key to be used to implement a special function
+ * on your types that define how your type should be serialized
+ * when passing across the IPC.
+ * @example
+ * Given a type in Rust that looks like this
+ * ```rs
+ * #[derive(serde::Serialize, serde::Deserialize)
+ * enum UserId {
+ *   String(String),
+ *   Number(u32),
+ * }
+ * ```
+ * `UserId::String("id")` would be serialized into `{ String: "id" }`
+ * and so we need to pass the same structure back to Rust
+ * ```ts
+ * import { SERIALIZE_TO_IPC_FN } from "@tauri-apps/api/core"
+ *
+ * class UserIdString {
+ *   id
+ *   constructor(id) {
+ *     this.id = id
+ *   }
+ *
+ *   [SERIALIZE_TO_IPC_FN]() {
+ *     return { String: this.id }
+ *   }
+ * }
+ *
+ * class UserIdNumber {
+ *   id
+ *   constructor(id) {
+ *     this.id = id
+ *   }
+ *
+ *   [SERIALIZE_TO_IPC_FN]() {
+ *     return { Number: this.id }
+ *   }
+ * }
+ *
+ * type UserId = UserIdString | UserIdNumber
+ * ```
+ *
+ */
+// if this value changes, make sure to update it in:
+// 1. ipc.js
+// 2. process-ipc-message-fn.js
+const SERIALIZE_TO_IPC_FN = '__TAURI_TO_IPC_KEY__';
+/**
+ * Stores the callback in a known location, and returns an identifier that can be passed to the backend.
+ * The backend uses the identifier to `eval()` the callback.
+ *
+ * @return An unique identifier associated with the callback function.
+ *
+ * @since 1.0.0
+ */
+function transformCallback(
+// TODO: Make this not optional in v3
+callback, once = false) {
+    return window.__TAURI_INTERNALS__.transformCallback(callback, once);
+}
+class Channel {
+    constructor(onmessage) {
+        _Channel_onmessage.set(this, void 0);
+        // the index is used as a mechanism to preserve message order
+        _Channel_nextMessageIndex.set(this, 0);
+        _Channel_pendingMessages.set(this, []);
+        _Channel_messageEndIndex.set(this, void 0);
+        __classPrivateFieldSet(this, _Channel_onmessage, onmessage || (() => { }));
+        this.id = transformCallback((rawMessage) => {
+            const index = rawMessage.index;
+            if ('end' in rawMessage) {
+                if (index == __classPrivateFieldGet(this, _Channel_nextMessageIndex, "f")) {
+                    this.cleanupCallback();
+                }
+                else {
+                    __classPrivateFieldSet(this, _Channel_messageEndIndex, index);
+                }
+                return;
+            }
+            const message = rawMessage.message;
+            // Process the message if we're at the right order
+            if (index == __classPrivateFieldGet(this, _Channel_nextMessageIndex, "f")) {
+                __classPrivateFieldGet(this, _Channel_onmessage, "f").call(this, message);
+                __classPrivateFieldSet(this, _Channel_nextMessageIndex, __classPrivateFieldGet(this, _Channel_nextMessageIndex, "f") + 1);
+                // process pending messages
+                while (__classPrivateFieldGet(this, _Channel_nextMessageIndex, "f") in __classPrivateFieldGet(this, _Channel_pendingMessages, "f")) {
+                    const message = __classPrivateFieldGet(this, _Channel_pendingMessages, "f")[__classPrivateFieldGet(this, _Channel_nextMessageIndex, "f")];
+                    __classPrivateFieldGet(this, _Channel_onmessage, "f").call(this, message);
+                    // eslint-disable-next-line @typescript-eslint/no-array-delete
+                    delete __classPrivateFieldGet(this, _Channel_pendingMessages, "f")[__classPrivateFieldGet(this, _Channel_nextMessageIndex, "f")];
+                    __classPrivateFieldSet(this, _Channel_nextMessageIndex, __classPrivateFieldGet(this, _Channel_nextMessageIndex, "f") + 1);
+                }
+                if (__classPrivateFieldGet(this, _Channel_nextMessageIndex, "f") === __classPrivateFieldGet(this, _Channel_messageEndIndex, "f")) {
+                    this.cleanupCallback();
+                }
+            }
+            // Queue the message if we're not
+            else {
+                // eslint-disable-next-line security/detect-object-injection
+                __classPrivateFieldGet(this, _Channel_pendingMessages, "f")[index] = message;
+            }
+        });
+    }
+    cleanupCallback() {
+        window.__TAURI_INTERNALS__.unregisterCallback(this.id);
+    }
+    set onmessage(handler) {
+        __classPrivateFieldSet(this, _Channel_onmessage, handler);
+    }
+    get onmessage() {
+        return __classPrivateFieldGet(this, _Channel_onmessage, "f");
+    }
+    [(_Channel_onmessage = new WeakMap(), _Channel_nextMessageIndex = new WeakMap(), _Channel_pendingMessages = new WeakMap(), _Channel_messageEndIndex = new WeakMap(), SERIALIZE_TO_IPC_FN)]() {
+        return `__CHANNEL__:${this.id}`;
+    }
+    toJSON() {
+        // eslint-disable-next-line security/detect-object-injection
+        return this[SERIALIZE_TO_IPC_FN]();
+    }
+}
+/**
+ * Sends a message to the backend.
+ * @example
+ * ```typescript
+ * import { invoke } from '@tauri-apps/api/core';
+ * await invoke('login', { user: 'tauri', password: 'poiwe3h4r5ip3yrhtew9ty' });
+ * ```
+ *
+ * @param cmd The command name.
+ * @param args The optional arguments to pass to the command.
+ * @param options The request options.
+ * @return A promise resolving or rejecting to the backend response.
+ *
+ * @since 1.0.0
+ */
+async function invoke(cmd, args = {}, options) {
+    return window.__TAURI_INTERNALS__.invoke(cmd, args, options);
+}
+
+// Copyright 2019-2023 Tauri Programme within The Commons Conservancy
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
+/**
+ * Make HTTP requests with the Rust backend.
+ *
+ * ## Security
+ *
+ * This API has a scope configuration that forces you to restrict the URLs that can be accessed using glob patterns.
+ *
+ * For instance, this scope configuration only allows making HTTP requests to all subdomains for `tauri.app` except for `https://private.tauri.app`:
+ * ```json
+ * {
+ *   "permissions": [
+ *     {
+ *       "identifier": "http:default",
+ *       "allow": [{ "url": "https://*.tauri.app" }],
+ *       "deny": [{ "url": "https://private.tauri.app" }]
+ *     }
+ *   ]
+ * }
+ * ```
+ * Trying to execute any API with a URL not configured on the scope results in a promise rejection due to denied access.
+ *
+ * @module
+ */
+const ERROR_REQUEST_CANCELLED = 'Request cancelled';
+/**
+ * Fetch a resource from the network. It returns a `Promise` that resolves to the
+ * `Response` to that `Request`, whether it is successful or not.
+ *
+ * @example
+ * ```typescript
+ * const response = await fetch("http://my.json.host/data.json");
+ * console.log(response.status);  // e.g. 200
+ * console.log(response.statusText); // e.g. "OK"
+ * const jsonData = await response.json();
+ * ```
+ *
+ * @since 2.0.0
+ */
+async function fetch(input, init) {
+    // abort early here if needed
+    const signal = init?.signal;
+    if (signal?.aborted) {
+        throw new Error(ERROR_REQUEST_CANCELLED);
+    }
+    const maxRedirections = init?.maxRedirections;
+    const connectTimeout = init?.connectTimeout;
+    const proxy = init?.proxy;
+    const danger = init?.danger;
+    // Remove these fields before creating the request
+    if (init) {
+        delete init.maxRedirections;
+        delete init.connectTimeout;
+        delete init.proxy;
+        delete init.danger;
+    }
+    const headers = init?.headers
+        ? init.headers instanceof Headers
+            ? init.headers
+            : new Headers(init.headers)
+        : new Headers();
+    const req = new Request(input, init);
+    const buffer = await req.arrayBuffer();
+    const data = buffer.byteLength !== 0 ? Array.from(new Uint8Array(buffer)) : null;
+    // append new headers created by the browser `Request` implementation,
+    // if not already declared by the caller of this function
+    for (const [key, value] of req.headers) {
+        if (!headers.get(key)) {
+            headers.set(key, value);
+        }
+    }
+    const headersArray = headers instanceof Headers
+        ? Array.from(headers.entries())
+        : Array.isArray(headers)
+            ? headers
+            : Object.entries(headers);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const mappedHeaders = headersArray.map(([name, val]) => [
+        name,
+        // we need to ensure we have all header values as strings
+        // eslint-disable-next-line
+        typeof val === 'string' ? val : val.toString()
+    ]);
+    // abort early here if needed
+    if (signal?.aborted) {
+        throw new Error(ERROR_REQUEST_CANCELLED);
+    }
+    const rid = await invoke('plugin:http|fetch', {
+        clientConfig: {
+            method: req.method,
+            url: req.url,
+            headers: mappedHeaders,
+            data,
+            maxRedirections,
+            connectTimeout,
+            proxy,
+            danger
+        }
+    });
+    const abort = () => invoke('plugin:http|fetch_cancel', { rid });
+    // abort early here if needed
+    if (signal?.aborted) {
+        // we don't care about the result of this proimse
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        abort();
+        throw new Error(ERROR_REQUEST_CANCELLED);
+    }
+    signal?.addEventListener('abort', () => void abort());
+    const { status, statusText, url, headers: responseHeaders, rid: responseRid } = await invoke('plugin:http|fetch_send', {
+        rid
+    });
+    // no body for 101, 103, 204, 205 and 304
+    // see https://fetch.spec.whatwg.org/#null-body-status
+    const body = [101, 103, 204, 205, 304].includes(status)
+        ? null
+        : new ReadableStream({
+            start: (controller) => {
+                const streamChannel = new Channel();
+                streamChannel.onmessage = (res) => {
+                    // close early if aborted
+                    if (signal?.aborted) {
+                        controller.error(ERROR_REQUEST_CANCELLED);
+                        return;
+                    }
+                    const resUint8 = new Uint8Array(res);
+                    const lastByte = resUint8[resUint8.byteLength - 1];
+                    const actualRes = resUint8.slice(0, resUint8.byteLength - 1);
+                    // close when the signal to close (last byte is 1) is sent from the IPC.
+                    if (lastByte == 1) {
+                        controller.close();
+                        return;
+                    }
+                    controller.enqueue(actualRes);
+                };
+                // run a non-blocking body stream fetch
+                invoke('plugin:http|fetch_read_body', {
+                    rid: responseRid,
+                    streamChannel
+                }).catch((e) => {
+                    controller.error(e);
+                });
+            }
+        });
+    const res = new Response(body, {
+        status,
+        statusText
+    });
+    // Set `Response` properties that are ignored by the
+    // constructor, like url and some headers
+    //
+    // Since url and headers are read only properties
+    // this is the only way to set them.
+    Object.defineProperty(res, 'url', { value: url });
+    Object.defineProperty(res, 'headers', {
+        value: new Headers(responseHeaders)
+    });
+    return res;
+}
+
 var commonjsGlobal = typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : {};
 
 function getDefaultExportFromCjs (x) {
@@ -32,704 +375,6 @@ function getAugmentedNamespace(n) {
 	});
 	return a;
 }
-
-var browserPonyfill = {exports: {}};
-
-var hasRequiredBrowserPonyfill;
-
-function requireBrowserPonyfill () {
-	if (hasRequiredBrowserPonyfill) return browserPonyfill.exports;
-	hasRequiredBrowserPonyfill = 1;
-	(function (module, exports) {
-		// Save global object in a variable
-		var __global__ =
-		(typeof globalThis !== 'undefined' && globalThis) ||
-		(typeof self !== 'undefined' && self) ||
-		(typeof commonjsGlobal !== 'undefined' && commonjsGlobal);
-		// Create an object that extends from __global__ without the fetch function
-		var __globalThis__ = (function () {
-		function F() {
-		this.fetch = false;
-		this.DOMException = __global__.DOMException;
-		}
-		F.prototype = __global__; // Needed for feature detection on whatwg-fetch's code
-		return new F();
-		})();
-		// Wraps whatwg-fetch with a function scope to hijack the global object
-		// "globalThis" that's going to be patched
-		(function(globalThis) {
-
-		((function (exports) {
-
-		  /* eslint-disable no-prototype-builtins */
-		  var g =
-		    (typeof globalThis !== 'undefined' && globalThis) ||
-		    (typeof self !== 'undefined' && self) ||
-		    // eslint-disable-next-line no-undef
-		    (typeof commonjsGlobal !== 'undefined' && commonjsGlobal) ||
-		    {};
-
-		  var support = {
-		    searchParams: 'URLSearchParams' in g,
-		    iterable: 'Symbol' in g && 'iterator' in Symbol,
-		    blob:
-		      'FileReader' in g &&
-		      'Blob' in g &&
-		      (function() {
-		        try {
-		          new Blob();
-		          return true
-		        } catch (e) {
-		          return false
-		        }
-		      })(),
-		    formData: 'FormData' in g,
-		    arrayBuffer: 'ArrayBuffer' in g
-		  };
-
-		  function isDataView(obj) {
-		    return obj && DataView.prototype.isPrototypeOf(obj)
-		  }
-
-		  if (support.arrayBuffer) {
-		    var viewClasses = [
-		      '[object Int8Array]',
-		      '[object Uint8Array]',
-		      '[object Uint8ClampedArray]',
-		      '[object Int16Array]',
-		      '[object Uint16Array]',
-		      '[object Int32Array]',
-		      '[object Uint32Array]',
-		      '[object Float32Array]',
-		      '[object Float64Array]'
-		    ];
-
-		    var isArrayBufferView =
-		      ArrayBuffer.isView ||
-		      function(obj) {
-		        return obj && viewClasses.indexOf(Object.prototype.toString.call(obj)) > -1
-		      };
-		  }
-
-		  function normalizeName(name) {
-		    if (typeof name !== 'string') {
-		      name = String(name);
-		    }
-		    if (/[^a-z0-9\-#$%&'*+.^_`|~!]/i.test(name) || name === '') {
-		      throw new TypeError('Invalid character in header field name: "' + name + '"')
-		    }
-		    return name.toLowerCase()
-		  }
-
-		  function normalizeValue(value) {
-		    if (typeof value !== 'string') {
-		      value = String(value);
-		    }
-		    return value
-		  }
-
-		  // Build a destructive iterator for the value list
-		  function iteratorFor(items) {
-		    var iterator = {
-		      next: function() {
-		        var value = items.shift();
-		        return {done: value === undefined, value: value}
-		      }
-		    };
-
-		    if (support.iterable) {
-		      iterator[Symbol.iterator] = function() {
-		        return iterator
-		      };
-		    }
-
-		    return iterator
-		  }
-
-		  function Headers(headers) {
-		    this.map = {};
-
-		    if (headers instanceof Headers) {
-		      headers.forEach(function(value, name) {
-		        this.append(name, value);
-		      }, this);
-		    } else if (Array.isArray(headers)) {
-		      headers.forEach(function(header) {
-		        if (header.length != 2) {
-		          throw new TypeError('Headers constructor: expected name/value pair to be length 2, found' + header.length)
-		        }
-		        this.append(header[0], header[1]);
-		      }, this);
-		    } else if (headers) {
-		      Object.getOwnPropertyNames(headers).forEach(function(name) {
-		        this.append(name, headers[name]);
-		      }, this);
-		    }
-		  }
-
-		  Headers.prototype.append = function(name, value) {
-		    name = normalizeName(name);
-		    value = normalizeValue(value);
-		    var oldValue = this.map[name];
-		    this.map[name] = oldValue ? oldValue + ', ' + value : value;
-		  };
-
-		  Headers.prototype['delete'] = function(name) {
-		    delete this.map[normalizeName(name)];
-		  };
-
-		  Headers.prototype.get = function(name) {
-		    name = normalizeName(name);
-		    return this.has(name) ? this.map[name] : null
-		  };
-
-		  Headers.prototype.has = function(name) {
-		    return this.map.hasOwnProperty(normalizeName(name))
-		  };
-
-		  Headers.prototype.set = function(name, value) {
-		    this.map[normalizeName(name)] = normalizeValue(value);
-		  };
-
-		  Headers.prototype.forEach = function(callback, thisArg) {
-		    for (var name in this.map) {
-		      if (this.map.hasOwnProperty(name)) {
-		        callback.call(thisArg, this.map[name], name, this);
-		      }
-		    }
-		  };
-
-		  Headers.prototype.keys = function() {
-		    var items = [];
-		    this.forEach(function(value, name) {
-		      items.push(name);
-		    });
-		    return iteratorFor(items)
-		  };
-
-		  Headers.prototype.values = function() {
-		    var items = [];
-		    this.forEach(function(value) {
-		      items.push(value);
-		    });
-		    return iteratorFor(items)
-		  };
-
-		  Headers.prototype.entries = function() {
-		    var items = [];
-		    this.forEach(function(value, name) {
-		      items.push([name, value]);
-		    });
-		    return iteratorFor(items)
-		  };
-
-		  if (support.iterable) {
-		    Headers.prototype[Symbol.iterator] = Headers.prototype.entries;
-		  }
-
-		  function consumed(body) {
-		    if (body._noBody) return
-		    if (body.bodyUsed) {
-		      return Promise.reject(new TypeError('Already read'))
-		    }
-		    body.bodyUsed = true;
-		  }
-
-		  function fileReaderReady(reader) {
-		    return new Promise(function(resolve, reject) {
-		      reader.onload = function() {
-		        resolve(reader.result);
-		      };
-		      reader.onerror = function() {
-		        reject(reader.error);
-		      };
-		    })
-		  }
-
-		  function readBlobAsArrayBuffer(blob) {
-		    var reader = new FileReader();
-		    var promise = fileReaderReady(reader);
-		    reader.readAsArrayBuffer(blob);
-		    return promise
-		  }
-
-		  function readBlobAsText(blob) {
-		    var reader = new FileReader();
-		    var promise = fileReaderReady(reader);
-		    var match = /charset=([A-Za-z0-9_-]+)/.exec(blob.type);
-		    var encoding = match ? match[1] : 'utf-8';
-		    reader.readAsText(blob, encoding);
-		    return promise
-		  }
-
-		  function readArrayBufferAsText(buf) {
-		    var view = new Uint8Array(buf);
-		    var chars = new Array(view.length);
-
-		    for (var i = 0; i < view.length; i++) {
-		      chars[i] = String.fromCharCode(view[i]);
-		    }
-		    return chars.join('')
-		  }
-
-		  function bufferClone(buf) {
-		    if (buf.slice) {
-		      return buf.slice(0)
-		    } else {
-		      var view = new Uint8Array(buf.byteLength);
-		      view.set(new Uint8Array(buf));
-		      return view.buffer
-		    }
-		  }
-
-		  function Body() {
-		    this.bodyUsed = false;
-
-		    this._initBody = function(body) {
-		      /*
-		        fetch-mock wraps the Response object in an ES6 Proxy to
-		        provide useful test harness features such as flush. However, on
-		        ES5 browsers without fetch or Proxy support pollyfills must be used;
-		        the proxy-pollyfill is unable to proxy an attribute unless it exists
-		        on the object before the Proxy is created. This change ensures
-		        Response.bodyUsed exists on the instance, while maintaining the
-		        semantic of setting Request.bodyUsed in the constructor before
-		        _initBody is called.
-		      */
-		      // eslint-disable-next-line no-self-assign
-		      this.bodyUsed = this.bodyUsed;
-		      this._bodyInit = body;
-		      if (!body) {
-		        this._noBody = true;
-		        this._bodyText = '';
-		      } else if (typeof body === 'string') {
-		        this._bodyText = body;
-		      } else if (support.blob && Blob.prototype.isPrototypeOf(body)) {
-		        this._bodyBlob = body;
-		      } else if (support.formData && FormData.prototype.isPrototypeOf(body)) {
-		        this._bodyFormData = body;
-		      } else if (support.searchParams && URLSearchParams.prototype.isPrototypeOf(body)) {
-		        this._bodyText = body.toString();
-		      } else if (support.arrayBuffer && support.blob && isDataView(body)) {
-		        this._bodyArrayBuffer = bufferClone(body.buffer);
-		        // IE 10-11 can't handle a DataView body.
-		        this._bodyInit = new Blob([this._bodyArrayBuffer]);
-		      } else if (support.arrayBuffer && (ArrayBuffer.prototype.isPrototypeOf(body) || isArrayBufferView(body))) {
-		        this._bodyArrayBuffer = bufferClone(body);
-		      } else {
-		        this._bodyText = body = Object.prototype.toString.call(body);
-		      }
-
-		      if (!this.headers.get('content-type')) {
-		        if (typeof body === 'string') {
-		          this.headers.set('content-type', 'text/plain;charset=UTF-8');
-		        } else if (this._bodyBlob && this._bodyBlob.type) {
-		          this.headers.set('content-type', this._bodyBlob.type);
-		        } else if (support.searchParams && URLSearchParams.prototype.isPrototypeOf(body)) {
-		          this.headers.set('content-type', 'application/x-www-form-urlencoded;charset=UTF-8');
-		        }
-		      }
-		    };
-
-		    if (support.blob) {
-		      this.blob = function() {
-		        var rejected = consumed(this);
-		        if (rejected) {
-		          return rejected
-		        }
-
-		        if (this._bodyBlob) {
-		          return Promise.resolve(this._bodyBlob)
-		        } else if (this._bodyArrayBuffer) {
-		          return Promise.resolve(new Blob([this._bodyArrayBuffer]))
-		        } else if (this._bodyFormData) {
-		          throw new Error('could not read FormData body as blob')
-		        } else {
-		          return Promise.resolve(new Blob([this._bodyText]))
-		        }
-		      };
-		    }
-
-		    this.arrayBuffer = function() {
-		      if (this._bodyArrayBuffer) {
-		        var isConsumed = consumed(this);
-		        if (isConsumed) {
-		          return isConsumed
-		        } else if (ArrayBuffer.isView(this._bodyArrayBuffer)) {
-		          return Promise.resolve(
-		            this._bodyArrayBuffer.buffer.slice(
-		              this._bodyArrayBuffer.byteOffset,
-		              this._bodyArrayBuffer.byteOffset + this._bodyArrayBuffer.byteLength
-		            )
-		          )
-		        } else {
-		          return Promise.resolve(this._bodyArrayBuffer)
-		        }
-		      } else if (support.blob) {
-		        return this.blob().then(readBlobAsArrayBuffer)
-		      } else {
-		        throw new Error('could not read as ArrayBuffer')
-		      }
-		    };
-
-		    this.text = function() {
-		      var rejected = consumed(this);
-		      if (rejected) {
-		        return rejected
-		      }
-
-		      if (this._bodyBlob) {
-		        return readBlobAsText(this._bodyBlob)
-		      } else if (this._bodyArrayBuffer) {
-		        return Promise.resolve(readArrayBufferAsText(this._bodyArrayBuffer))
-		      } else if (this._bodyFormData) {
-		        throw new Error('could not read FormData body as text')
-		      } else {
-		        return Promise.resolve(this._bodyText)
-		      }
-		    };
-
-		    if (support.formData) {
-		      this.formData = function() {
-		        return this.text().then(decode)
-		      };
-		    }
-
-		    this.json = function() {
-		      return this.text().then(JSON.parse)
-		    };
-
-		    return this
-		  }
-
-		  // HTTP methods whose capitalization should be normalized
-		  var methods = ['CONNECT', 'DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT', 'TRACE'];
-
-		  function normalizeMethod(method) {
-		    var upcased = method.toUpperCase();
-		    return methods.indexOf(upcased) > -1 ? upcased : method
-		  }
-
-		  function Request(input, options) {
-		    if (!(this instanceof Request)) {
-		      throw new TypeError('Please use the "new" operator, this DOM object constructor cannot be called as a function.')
-		    }
-
-		    options = options || {};
-		    var body = options.body;
-
-		    if (input instanceof Request) {
-		      if (input.bodyUsed) {
-		        throw new TypeError('Already read')
-		      }
-		      this.url = input.url;
-		      this.credentials = input.credentials;
-		      if (!options.headers) {
-		        this.headers = new Headers(input.headers);
-		      }
-		      this.method = input.method;
-		      this.mode = input.mode;
-		      this.signal = input.signal;
-		      if (!body && input._bodyInit != null) {
-		        body = input._bodyInit;
-		        input.bodyUsed = true;
-		      }
-		    } else {
-		      this.url = String(input);
-		    }
-
-		    this.credentials = options.credentials || this.credentials || 'same-origin';
-		    if (options.headers || !this.headers) {
-		      this.headers = new Headers(options.headers);
-		    }
-		    this.method = normalizeMethod(options.method || this.method || 'GET');
-		    this.mode = options.mode || this.mode || null;
-		    this.signal = options.signal || this.signal || (function () {
-		      if ('AbortController' in g) {
-		        var ctrl = new AbortController();
-		        return ctrl.signal;
-		      }
-		    }());
-		    this.referrer = null;
-
-		    if ((this.method === 'GET' || this.method === 'HEAD') && body) {
-		      throw new TypeError('Body not allowed for GET or HEAD requests')
-		    }
-		    this._initBody(body);
-
-		    if (this.method === 'GET' || this.method === 'HEAD') {
-		      if (options.cache === 'no-store' || options.cache === 'no-cache') {
-		        // Search for a '_' parameter in the query string
-		        var reParamSearch = /([?&])_=[^&]*/;
-		        if (reParamSearch.test(this.url)) {
-		          // If it already exists then set the value with the current time
-		          this.url = this.url.replace(reParamSearch, '$1_=' + new Date().getTime());
-		        } else {
-		          // Otherwise add a new '_' parameter to the end with the current time
-		          var reQueryString = /\?/;
-		          this.url += (reQueryString.test(this.url) ? '&' : '?') + '_=' + new Date().getTime();
-		        }
-		      }
-		    }
-		  }
-
-		  Request.prototype.clone = function() {
-		    return new Request(this, {body: this._bodyInit})
-		  };
-
-		  function decode(body) {
-		    var form = new FormData();
-		    body
-		      .trim()
-		      .split('&')
-		      .forEach(function(bytes) {
-		        if (bytes) {
-		          var split = bytes.split('=');
-		          var name = split.shift().replace(/\+/g, ' ');
-		          var value = split.join('=').replace(/\+/g, ' ');
-		          form.append(decodeURIComponent(name), decodeURIComponent(value));
-		        }
-		      });
-		    return form
-		  }
-
-		  function parseHeaders(rawHeaders) {
-		    var headers = new Headers();
-		    // Replace instances of \r\n and \n followed by at least one space or horizontal tab with a space
-		    // https://tools.ietf.org/html/rfc7230#section-3.2
-		    var preProcessedHeaders = rawHeaders.replace(/\r?\n[\t ]+/g, ' ');
-		    // Avoiding split via regex to work around a common IE11 bug with the core-js 3.6.0 regex polyfill
-		    // https://github.com/github/fetch/issues/748
-		    // https://github.com/zloirock/core-js/issues/751
-		    preProcessedHeaders
-		      .split('\r')
-		      .map(function(header) {
-		        return header.indexOf('\n') === 0 ? header.substr(1, header.length) : header
-		      })
-		      .forEach(function(line) {
-		        var parts = line.split(':');
-		        var key = parts.shift().trim();
-		        if (key) {
-		          var value = parts.join(':').trim();
-		          try {
-		            headers.append(key, value);
-		          } catch (error) {
-		            console.warn('Response ' + error.message);
-		          }
-		        }
-		      });
-		    return headers
-		  }
-
-		  Body.call(Request.prototype);
-
-		  function Response(bodyInit, options) {
-		    if (!(this instanceof Response)) {
-		      throw new TypeError('Please use the "new" operator, this DOM object constructor cannot be called as a function.')
-		    }
-		    if (!options) {
-		      options = {};
-		    }
-
-		    this.type = 'default';
-		    this.status = options.status === undefined ? 200 : options.status;
-		    if (this.status < 200 || this.status > 599) {
-		      throw new RangeError("Failed to construct 'Response': The status provided (0) is outside the range [200, 599].")
-		    }
-		    this.ok = this.status >= 200 && this.status < 300;
-		    this.statusText = options.statusText === undefined ? '' : '' + options.statusText;
-		    this.headers = new Headers(options.headers);
-		    this.url = options.url || '';
-		    this._initBody(bodyInit);
-		  }
-
-		  Body.call(Response.prototype);
-
-		  Response.prototype.clone = function() {
-		    return new Response(this._bodyInit, {
-		      status: this.status,
-		      statusText: this.statusText,
-		      headers: new Headers(this.headers),
-		      url: this.url
-		    })
-		  };
-
-		  Response.error = function() {
-		    var response = new Response(null, {status: 200, statusText: ''});
-		    response.ok = false;
-		    response.status = 0;
-		    response.type = 'error';
-		    return response
-		  };
-
-		  var redirectStatuses = [301, 302, 303, 307, 308];
-
-		  Response.redirect = function(url, status) {
-		    if (redirectStatuses.indexOf(status) === -1) {
-		      throw new RangeError('Invalid status code')
-		    }
-
-		    return new Response(null, {status: status, headers: {location: url}})
-		  };
-
-		  exports.DOMException = g.DOMException;
-		  try {
-		    new exports.DOMException();
-		  } catch (err) {
-		    exports.DOMException = function(message, name) {
-		      this.message = message;
-		      this.name = name;
-		      var error = Error(message);
-		      this.stack = error.stack;
-		    };
-		    exports.DOMException.prototype = Object.create(Error.prototype);
-		    exports.DOMException.prototype.constructor = exports.DOMException;
-		  }
-
-		  function fetch(input, init) {
-		    return new Promise(function(resolve, reject) {
-		      var request = new Request(input, init);
-
-		      if (request.signal && request.signal.aborted) {
-		        return reject(new exports.DOMException('Aborted', 'AbortError'))
-		      }
-
-		      var xhr = new XMLHttpRequest();
-
-		      function abortXhr() {
-		        xhr.abort();
-		      }
-
-		      xhr.onload = function() {
-		        var options = {
-		          statusText: xhr.statusText,
-		          headers: parseHeaders(xhr.getAllResponseHeaders() || '')
-		        };
-		        // This check if specifically for when a user fetches a file locally from the file system
-		        // Only if the status is out of a normal range
-		        if (request.url.indexOf('file://') === 0 && (xhr.status < 200 || xhr.status > 599)) {
-		          options.status = 200;
-		        } else {
-		          options.status = xhr.status;
-		        }
-		        options.url = 'responseURL' in xhr ? xhr.responseURL : options.headers.get('X-Request-URL');
-		        var body = 'response' in xhr ? xhr.response : xhr.responseText;
-		        setTimeout(function() {
-		          resolve(new Response(body, options));
-		        }, 0);
-		      };
-
-		      xhr.onerror = function() {
-		        setTimeout(function() {
-		          reject(new TypeError('Network request failed'));
-		        }, 0);
-		      };
-
-		      xhr.ontimeout = function() {
-		        setTimeout(function() {
-		          reject(new TypeError('Network request timed out'));
-		        }, 0);
-		      };
-
-		      xhr.onabort = function() {
-		        setTimeout(function() {
-		          reject(new exports.DOMException('Aborted', 'AbortError'));
-		        }, 0);
-		      };
-
-		      function fixUrl(url) {
-		        try {
-		          return url === '' && g.location.href ? g.location.href : url
-		        } catch (e) {
-		          return url
-		        }
-		      }
-
-		      xhr.open(request.method, fixUrl(request.url), true);
-
-		      if (request.credentials === 'include') {
-		        xhr.withCredentials = true;
-		      } else if (request.credentials === 'omit') {
-		        xhr.withCredentials = false;
-		      }
-
-		      if ('responseType' in xhr) {
-		        if (support.blob) {
-		          xhr.responseType = 'blob';
-		        } else if (
-		          support.arrayBuffer
-		        ) {
-		          xhr.responseType = 'arraybuffer';
-		        }
-		      }
-
-		      if (init && typeof init.headers === 'object' && !(init.headers instanceof Headers || (g.Headers && init.headers instanceof g.Headers))) {
-		        var names = [];
-		        Object.getOwnPropertyNames(init.headers).forEach(function(name) {
-		          names.push(normalizeName(name));
-		          xhr.setRequestHeader(name, normalizeValue(init.headers[name]));
-		        });
-		        request.headers.forEach(function(value, name) {
-		          if (names.indexOf(name) === -1) {
-		            xhr.setRequestHeader(name, value);
-		          }
-		        });
-		      } else {
-		        request.headers.forEach(function(value, name) {
-		          xhr.setRequestHeader(name, value);
-		        });
-		      }
-
-		      if (request.signal) {
-		        request.signal.addEventListener('abort', abortXhr);
-
-		        xhr.onreadystatechange = function() {
-		          // DONE (success or failure)
-		          if (xhr.readyState === 4) {
-		            request.signal.removeEventListener('abort', abortXhr);
-		          }
-		        };
-		      }
-
-		      xhr.send(typeof request._bodyInit === 'undefined' ? null : request._bodyInit);
-		    })
-		  }
-
-		  fetch.polyfill = true;
-
-		  if (!g.fetch) {
-		    g.fetch = fetch;
-		    g.Headers = Headers;
-		    g.Request = Request;
-		    g.Response = Response;
-		  }
-
-		  exports.Headers = Headers;
-		  exports.Request = Request;
-		  exports.Response = Response;
-		  exports.fetch = fetch;
-
-		  return exports;
-
-		}))({});
-		})(__globalThis__);
-		// This is a ponyfill, so...
-		__globalThis__.fetch.ponyfill = true;
-		delete __globalThis__.fetch.polyfill;
-		// Choose between native implementation (__global__) or custom implementation (__globalThis__)
-		var ctx = __global__.fetch ? __global__ : __globalThis__;
-		exports = ctx.fetch; // To enable: import fetch from 'cross-fetch'
-		exports.default = ctx.fetch; // For TypeScript consumers without esModuleInterop.
-		exports.fetch = ctx.fetch; // To enable: import {fetch} from 'cross-fetch'
-		exports.Headers = ctx.Headers;
-		exports.Request = ctx.Request;
-		exports.Response = ctx.Response;
-		module.exports = exports; 
-	} (browserPonyfill, browserPonyfill.exports));
-	return browserPonyfill.exports;
-}
-
-var browserPonyfillExports = requireBrowserPonyfill();
 
 var global$1 = (typeof global !== "undefined" ? global :
   typeof self !== "undefined" ? self :
@@ -4984,8 +4629,8 @@ function base64DetectIncompleteChar(buffer) {
 }
 
 var _polyfillNode_string_decoder = /*#__PURE__*/Object.freeze({
-	__proto__: null,
-	StringDecoder: StringDecoder
+    __proto__: null,
+    StringDecoder: StringDecoder
 });
 
 Readable.ReadableState = ReadableState;
@@ -6670,14 +6315,14 @@ Stream.prototype.pipe = function(dest, options) {
 };
 
 var _polyfillNode_stream = /*#__PURE__*/Object.freeze({
-	__proto__: null,
-	Duplex: Duplex,
-	PassThrough: PassThrough,
-	Readable: Readable,
-	Stream: Stream,
-	Transform: Transform,
-	Writable: Writable,
-	default: Stream
+    __proto__: null,
+    Duplex: Duplex,
+    PassThrough: PassThrough,
+    Readable: Readable,
+    Stream: Stream,
+    Transform: Transform,
+    Writable: Writable,
+    default: Stream
 });
 
 var require$$0 = /*@__PURE__*/getAugmentedNamespace(_polyfillNode_stream);
@@ -9200,13 +8845,13 @@ const excludeHeaders = (headers, headersToExclude) => {
 };
 
 var requestHelpers = /*#__PURE__*/Object.freeze({
-	__proto__: null,
-	cleanupFalsy: cleanupFalsy,
-	conditionalParam: conditionalParam,
-	excludeHeaders: excludeHeaders,
-	getDAVAttribute: getDAVAttribute,
-	urlContains: urlContains,
-	urlEquals: urlEquals
+    __proto__: null,
+    cleanupFalsy: cleanupFalsy,
+    conditionalParam: conditionalParam,
+    excludeHeaders: excludeHeaders,
+    getDAVAttribute: getDAVAttribute,
+    urlContains: urlContains,
+    urlEquals: urlEquals
 });
 
 const debug$5 = getLogger('tsdav:request');
@@ -9248,7 +8893,7 @@ const davRequest = async (params) => {
         ...fetchOptions
     };
     delete fetchOptionsWithoutHeaders.headers;
-    const davResponse = await browserPonyfillExports.fetch(url, {
+    const davResponse = await fetch(url, {
         headers: {
             'Content-Type': 'text/xml;charset=UTF-8',
             ...cleanupFalsy(headers),
@@ -9370,7 +9015,7 @@ const propfind = async (params) => {
 };
 const createObject = async (params) => {
     const { url, data, headers, headersToExclude, fetchOptions = {} } = params;
-    return browserPonyfillExports.fetch(url, {
+    return fetch(url, {
         method: 'PUT',
         body: data,
         headers: excludeHeaders(headers, headersToExclude),
@@ -9379,7 +9024,7 @@ const createObject = async (params) => {
 };
 const updateObject = async (params) => {
     const { url, data, etag, headers, headersToExclude, fetchOptions = {} } = params;
-    return browserPonyfillExports.fetch(url, {
+    return fetch(url, {
         method: 'PUT',
         body: data,
         headers: excludeHeaders(cleanupFalsy({ 'If-Match': etag, ...headers }), headersToExclude),
@@ -9388,7 +9033,7 @@ const updateObject = async (params) => {
 };
 const deleteObject = async (params) => {
     const { url, headers, etag, headersToExclude, fetchOptions = {} } = params;
-    return browserPonyfillExports.fetch(url, {
+    return fetch(url, {
         method: 'DELETE',
         headers: excludeHeaders(cleanupFalsy({ 'If-Match': etag, ...headers }), headersToExclude),
         ...fetchOptions,
@@ -9396,12 +9041,12 @@ const deleteObject = async (params) => {
 };
 
 var request = /*#__PURE__*/Object.freeze({
-	__proto__: null,
-	createObject: createObject,
-	davRequest: davRequest,
-	deleteObject: deleteObject,
-	propfind: propfind,
-	updateObject: updateObject
+    __proto__: null,
+    createObject: createObject,
+    davRequest: davRequest,
+    deleteObject: deleteObject,
+    propfind: propfind,
+    updateObject: updateObject
 });
 
 function hasFields(obj, fields) {
@@ -9653,13 +9298,13 @@ const smartCollectionSync = async (params) => {
 };
 
 var collection = /*#__PURE__*/Object.freeze({
-	__proto__: null,
-	collectionQuery: collectionQuery,
-	isCollectionDirty: isCollectionDirty,
-	makeCollection: makeCollection,
-	smartCollectionSync: smartCollectionSync,
-	supportedReportSet: supportedReportSet,
-	syncCollection: syncCollection
+    __proto__: null,
+    collectionQuery: collectionQuery,
+    isCollectionDirty: isCollectionDirty,
+    makeCollection: makeCollection,
+    smartCollectionSync: smartCollectionSync,
+    supportedReportSet: supportedReportSet,
+    syncCollection: syncCollection
 });
 
 /* eslint-disable no-underscore-dangle */
@@ -9845,14 +9490,14 @@ const deleteVCard = async (params) => {
 };
 
 var addressBook = /*#__PURE__*/Object.freeze({
-	__proto__: null,
-	addressBookMultiGet: addressBookMultiGet,
-	addressBookQuery: addressBookQuery,
-	createVCard: createVCard,
-	deleteVCard: deleteVCard,
-	fetchAddressBooks: fetchAddressBooks,
-	fetchVCards: fetchVCards,
-	updateVCard: updateVCard
+    __proto__: null,
+    addressBookMultiGet: addressBookMultiGet,
+    addressBookQuery: addressBookQuery,
+    createVCard: createVCard,
+    deleteVCard: deleteVCard,
+    fetchAddressBooks: fetchAddressBooks,
+    fetchVCards: fetchVCards,
+    updateVCard: updateVCard
 });
 
 /* eslint-disable no-underscore-dangle */
@@ -10289,18 +9934,18 @@ const freeBusyQuery = async (params) => {
 };
 
 var calendar = /*#__PURE__*/Object.freeze({
-	__proto__: null,
-	calendarMultiGet: calendarMultiGet,
-	calendarQuery: calendarQuery,
-	createCalendarObject: createCalendarObject,
-	deleteCalendarObject: deleteCalendarObject,
-	fetchCalendarObjects: fetchCalendarObjects,
-	fetchCalendarUserAddresses: fetchCalendarUserAddresses,
-	fetchCalendars: fetchCalendars,
-	freeBusyQuery: freeBusyQuery,
-	makeCalendar: makeCalendar,
-	syncCalendars: syncCalendars,
-	updateCalendarObject: updateCalendarObject
+    __proto__: null,
+    calendarMultiGet: calendarMultiGet,
+    calendarQuery: calendarQuery,
+    createCalendarObject: createCalendarObject,
+    deleteCalendarObject: deleteCalendarObject,
+    fetchCalendarObjects: fetchCalendarObjects,
+    fetchCalendarUserAddresses: fetchCalendarUserAddresses,
+    fetchCalendars: fetchCalendars,
+    freeBusyQuery: freeBusyQuery,
+    makeCalendar: makeCalendar,
+    syncCalendars: syncCalendars,
+    updateCalendarObject: updateCalendarObject
 });
 
 const debug$1 = getLogger('tsdav:account');
@@ -10312,7 +9957,7 @@ const serviceDiscovery = async (params) => {
     const uri = new URL(`/.well-known/${account.accountType}`, endpoint);
     uri.protocol = (_a = endpoint.protocol) !== null && _a !== void 0 ? _a : 'http';
     try {
-        const response = await browserPonyfillExports.fetch(uri.href, {
+        const response = await fetch(uri.href, {
             headers: excludeHeaders(headers, headersToExclude),
             method: 'PROPFIND',
             redirect: 'manual',
@@ -10452,11 +10097,11 @@ const createAccount = async (params) => {
 };
 
 var account = /*#__PURE__*/Object.freeze({
-	__proto__: null,
-	createAccount: createAccount,
-	fetchHomeUrl: fetchHomeUrl,
-	fetchPrincipalUrl: fetchPrincipalUrl,
-	serviceDiscovery: serviceDiscovery
+    __proto__: null,
+    createAccount: createAccount,
+    fetchHomeUrl: fetchHomeUrl,
+    fetchPrincipalUrl: fetchPrincipalUrl,
+    serviceDiscovery: serviceDiscovery
 });
 
 var base64$1 = {exports: {}};
@@ -10667,7 +10312,7 @@ const fetchOauthTokens = async (credentials, fetchOptions) => {
     });
     debug(credentials.tokenUrl);
     debug(param.toString());
-    const response = await browserPonyfillExports.fetch(credentials.tokenUrl, {
+    const response = await fetch(credentials.tokenUrl, {
         method: 'POST',
         body: param.toString(),
         headers: {
@@ -10699,7 +10344,7 @@ const refreshAccessToken = async (credentials, fetchOptions) => {
         refresh_token: credentials.refreshToken,
         grant_type: 'refresh_token',
     });
-    const response = await browserPonyfillExports.fetch(credentials.tokenUrl, {
+    const response = await fetch(credentials.tokenUrl, {
         method: 'POST',
         body: param.toString(),
         headers: {
@@ -10739,12 +10384,12 @@ const getOauthHeaders = async (credentials, fetchOptions) => {
 };
 
 var authHelpers = /*#__PURE__*/Object.freeze({
-	__proto__: null,
-	defaultParam: defaultParam,
-	fetchOauthTokens: fetchOauthTokens,
-	getBasicAuthHeaders: getBasicAuthHeaders,
-	getOauthHeaders: getOauthHeaders,
-	refreshAccessToken: refreshAccessToken
+    __proto__: null,
+    defaultParam: defaultParam,
+    fetchOauthTokens: fetchOauthTokens,
+    getBasicAuthHeaders: getBasicAuthHeaders,
+    getOauthHeaders: getOauthHeaders,
+    refreshAccessToken: refreshAccessToken
 });
 
 // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
@@ -11063,9 +10708,9 @@ class DAVClient {
 }
 
 var client = /*#__PURE__*/Object.freeze({
-	__proto__: null,
-	DAVClient: DAVClient,
-	createDAVClient: createDAVClient
+    __proto__: null,
+    DAVClient: DAVClient,
+    createDAVClient: createDAVClient
 });
 
 var index = {

@@ -1,5 +1,5 @@
 import { encode } from 'base-64';
-import { fetch } from 'cross-fetch';
+import { fetch } from "@tauri-apps/plugin-http";
 import getLogger from 'debug';
 
 import { DAVTokens } from '../types/DAVTypes';

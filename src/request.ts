@@ -1,4 +1,4 @@
-import { fetch } from 'cross-fetch';
+import { fetch } from "@tauri-apps/plugin-http";
 import getLogger from 'debug';
 import convert, { ElementCompact } from 'xml-js';
 

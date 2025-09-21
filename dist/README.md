@@ -1,3 +1,10 @@
+# TSDAV for Tauri
+
+This is a fork of [tsdav](https://github.com/natelindev/tsdav) adapted to use the [Tauri HTTP plugin](https://github.com/tauri-apps/plugins-workspace/tree/v2/plugins/http) instead of `cross-fetch`. This allows it to not run into CORS issues.
+
+Original README follows.
+---
+
 <p align="center">
   <img width="300" height="200" src="https://github.com/natelindev/tsdav/blob/master/docs/static/img/logo.svg">
 </p>
